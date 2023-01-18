@@ -24,119 +24,140 @@ static LISP sym_quote = NIL;
 static LISP sym_begin = NIL;
 
 LISP ltrace_fcn_name(LISP body);
-LISP ltrace_1(LISP fcn_name,LISP env);
-LISP ltrace(LISP fcn_names,LISP env);
+
+LISP ltrace_1(LISP fcn_name, LISP env);
+
+LISP ltrace(LISP fcn_names, LISP env);
+
 LISP luntrace_1(LISP fcn);
+
 LISP luntrace(LISP fcns);
+
 static void ct_gc_scan(LISP ptr);
+
 static LISP ct_gc_mark(LISP ptr);
-void ct_prin1(LISP ptr,FILE *f);
-LISP ct_eval(LISP ct,LISP *px,LISP *penv);
 
-LISP ltrace_fcn_name(LISP body)
-{LISP tmp;
- if NCONSP(body) return(NIL);
- if NEQ(CAR(body),sym_begin) return(NIL);
- tmp = CDR(body);
- if NCONSP(tmp) return(NIL);
- tmp = CAR(tmp);
- if NCONSP(tmp) return(NIL);
- if NEQ(CAR(tmp),sym_quote) return(NIL);
- tmp = CDR(tmp);
- if NCONSP(tmp) return(NIL);
- return(CAR(tmp));}
+void ct_prin1(LISP ptr, FILE *f);
 
-LISP ltrace_1(LISP fcn_name,LISP env)
-{LISP fcn,code;
- fcn = leval(fcn_name,env);
- switch TYPE(fcn)
- {case tc_closure:
- code = fcn->storage_as.closure.code;
- if NULLP(ltrace_fcn_name(cdr(code)))
- setcdr(code,cons(sym_begin,
- cons(cons(sym_quote,cons(fcn_name,NIL)),
- cons(cdr(code),NIL))));
- fcn->type = tc_closure_traced;
- break;
- case tc_closure_traced:
- break;
- default:
- err("not a closure, cannot trace",fcn);}
- return(NIL);}
+LISP ct_eval(LISP ct, LISP *px, LISP *penv);
 
-LISP ltrace(LISP fcn_names,LISP env)
-{LISP l;
- for(l=fcn_names;NNULLP(l);l=cdr(l))
- ltrace_1(car(l),env);
- return(NIL);}
+LISP ltrace_fcn_name(LISP body) {
+    LISP tmp;
+    if NCONSP(body) return (NIL);
+    if NEQ(CAR(body), sym_begin) return (NIL);
+    tmp = CDR(body);
+    if NCONSP(tmp) return (NIL);
+    tmp = CAR(tmp);
+    if NCONSP(tmp) return (NIL);
+    if NEQ(CAR(tmp), sym_quote) return (NIL);
+    tmp = CDR(tmp);
+    if NCONSP(tmp) return (NIL);
+    return (CAR(tmp));
+}
 
-LISP luntrace_1(LISP fcn)
-{switch TYPE(fcn)
- {case tc_closure:
- break;
- case tc_closure_traced:
- fcn->type = tc_closure;
- break;
- default:
- err("not a closure, cannot untrace",fcn);}
- return(NIL);}
+LISP ltrace_1(LISP fcn_name, LISP env) {
+    LISP fcn, code;
+    fcn = leval(fcn_name, env);
+    switch TYPE(fcn) {
+        case tc_closure:
+            code = fcn->storage_as.closure.code;
+            if NULLP(ltrace_fcn_name(cdr(code)))
+                setcdr(code, cons(sym_begin,
+                                  cons(cons(sym_quote, cons(fcn_name, NIL)),
+                                       cons(cdr(code), NIL))));
+            fcn->type = tc_closure_traced;
+            break;
+        case tc_closure_traced:
+            break;
+        default:
+            err("not a closure, cannot trace", fcn);
+    }
+    return (NIL);
+}
 
-LISP luntrace(LISP fcns)
-{LISP l;
- for(l=fcns;NNULLP(l);l=cdr(l))
- luntrace_1(car(l));
- return(NIL);}
+LISP ltrace(LISP fcn_names, LISP env) {
+    LISP l;
+    for (l = fcn_names; NNULLP(l); l = cdr(l))
+        ltrace_1(car(l), env);
+    return (NIL);
+}
 
-static void ct_gc_scan(LISP ptr)
-{CAR(ptr) = gc_relocate(CAR(ptr));
- CDR(ptr) = gc_relocate(CDR(ptr));}
+LISP luntrace_1(LISP fcn) {
+    switch TYPE(fcn) {
+        case tc_closure:
+            break;
+        case tc_closure_traced:
+            fcn->type = tc_closure;
+            break;
+        default:
+            err("not a closure, cannot untrace", fcn);
+    }
+    return (NIL);
+}
 
-static LISP ct_gc_mark(LISP ptr)
-{gc_mark(ptr->storage_as.closure.code);
- return(ptr->storage_as.closure.env);}
+LISP luntrace(LISP fcns) {
+    LISP l;
+    for (l = fcns; NNULLP(l); l = cdr(l))
+        luntrace_1(car(l));
+    return (NIL);
+}
 
-void ct_prin1(LISP ptr,FILE *f)
-{fput_st(f,"#<CLOSURE(TRACED) ");
- lprin1f(car(ptr->storage_as.closure.code),f);
- fput_st(f," ");
- lprin1f(cdr(ptr->storage_as.closure.code),f);
- fput_st(f,">");}
+static void ct_gc_scan(LISP ptr) {
+    CAR(ptr) = gc_relocate(CAR(ptr));
+    CDR(ptr) = gc_relocate(CDR(ptr));
+}
 
-LISP ct_eval(LISP ct,LISP *px,LISP *penv)
-{LISP fcn_name,args,env,result,l;
- fcn_name = ltrace_fcn_name(cdr(ct->storage_as.closure.code));
- args = leval_args(CDR(*px),*penv);
- fput_st(stdout,"->");
- lprin1f(fcn_name,stdout);
- for(l=args;NNULLP(l);l=cdr(l))
- {fput_st(stdout," ");
- lprin1f(car(l),stdout);}
- fput_st(stdout,"\n");
- env = extend_env(args,
- car(ct->storage_as.closure.code),
- ct->storage_as.closure.env);
- result = leval(cdr(ct->storage_as.closure.code),env);
- fput_st(stdout,"<-");
- lprin1f(fcn_name,stdout);
- fput_st(stdout," ");
- lprin1f(result,stdout);
- fput_st(stdout,"\n");
- *px = result;
- return(NIL);}
+static LISP ct_gc_mark(LISP ptr) {
+    gc_mark(ptr->storage_as.closure.code, -1L);
+    return (ptr->storage_as.closure.env);
+}
 
-void init_trace(void)
-{long j;
- set_gc_hooks(tc_closure_traced,
- NULL,
- ct_gc_mark,
- ct_gc_scan,
- NULL,
- &j);
- gc_protect_sym(&sym_traced,"*traced*");
- setvar(sym_traced,NIL,NIL);
- gc_protect_sym(&sym_begin,"begin");
- gc_protect_sym(&sym_quote,"quote");
- set_print_hooks(tc_closure_traced,ct_prin1);
- set_eval_hooks(tc_closure_traced,ct_eval);
- init_fsubr("trace",ltrace);
- init_lsubr("untrace",luntrace);}
+void ct_prin1(LISP ptr, FILE *f) {
+    fput_st(f, "#<CLOSURE(TRACED) ");
+    lprin1f(car(ptr->storage_as.closure.code), f);
+    fput_st(f, " ");
+    lprin1f(cdr(ptr->storage_as.closure.code), f);
+    fput_st(f, ">");
+}
+
+LISP ct_eval(LISP ct, LISP *px, LISP *penv) {
+    LISP fcn_name, args, env, result, l;
+    fcn_name = ltrace_fcn_name(cdr(ct->storage_as.closure.code));
+    args = leval_args(CDR(*px), *penv);
+    fput_st(stdout, "->");
+    lprin1f(fcn_name, stdout);
+    for (l = args; NNULLP(l); l = cdr(l)) {
+        fput_st(stdout, " ");
+        lprin1f(car(l), stdout);
+    }
+    fput_st(stdout, "\n");
+    env = extend_env(args,
+                     car(ct->storage_as.closure.code),
+                     ct->storage_as.closure.env);
+    result = leval(cdr(ct->storage_as.closure.code), env);
+    fput_st(stdout, "<-");
+    lprin1f(fcn_name, stdout);
+    fput_st(stdout, " ");
+    lprin1f(result, stdout);
+    fput_st(stdout, "\n");
+    *px = result;
+    return (NIL);
+}
+
+void init_trace(void) {
+    long j;
+    set_gc_hooks(tc_closure_traced,
+                 NULL,
+                 ct_gc_mark,
+                 ct_gc_scan,
+                 NULL,
+                 &j);
+    gc_protect_sym(&sym_traced, "*traced*");
+    setvar(sym_traced, NIL, NIL);
+    gc_protect_sym(&sym_begin, "begin");
+    gc_protect_sym(&sym_quote, "quote");
+    set_print_hooks(tc_closure_traced, ct_prin1);
+    set_eval_hooks(tc_closure_traced, ct_eval);
+    init_fsubr("trace", ltrace);
+    init_lsubr("untrace", luntrace);
+}
