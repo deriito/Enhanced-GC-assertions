@@ -432,13 +432,3 @@ LISP nreverse(LISP);
 LISP number2string(LISP, LISP);
 
 LISP string2number(LISP, LISP);
-
-long long get_timestamp_us(void);
-
-LISP print_timestamp_us(void);
-
-LISP mark_timestamp_start(void);
-
-LISP mark_timestamp_end(void);
-
-LISP print_runtime_us(void);

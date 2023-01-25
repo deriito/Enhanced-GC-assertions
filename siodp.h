@@ -301,4 +301,12 @@ LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num);
 
 LISP get_field(LISP struct_instance, LISP field_name);
 
-long long get_timestamp_us(void);
+LISP mark_clock_start(void);
+
+LISP mark_clock_end(void);
+
+LISP print_clock_time_cost(void);
+
+void mark_gc_clock_start(void);
+
+void mark_gc_clock_end(void);
