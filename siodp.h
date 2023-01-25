@@ -303,13 +303,21 @@ LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num);
 
 LISP get_field(LISP struct_instance, LISP field_name);
 
+LISP mark_clock_start(void);
+
+LISP mark_clock_end(void);
+
+LISP print_clock_time_cost(void);
+
+void mark_gc_clock_start(void);
+
+void mark_gc_clock_end(void);
+
 void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs);
 
 void translate_type_detail(char *res, LISP ptr);
 
 void translate_to_line_num_str(char* dst, long line_num);
-
-long long get_timestamp_us(void);
 
 /**
  * macros for gc assertion with new_struct_instance features
