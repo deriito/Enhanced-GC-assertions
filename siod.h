@@ -96,8 +96,13 @@ struct obj {
         struct {
             struct obj **data; // fieldデータ
             struct obj *struct_def_obj;
-            long *assign_sites; // dataの各番地に関する代入の行番号情報
         } struct_instance;
+
+        struct {
+            struct obj **data;
+            struct obj *struct_def_obj;
+            long assign_site_of_field1; // 行番号情報(動的コンパイルされたslotだと仮定)
+        } struct_instance_with_rec;
 
         struct {
             struct obj *class_name_sym;
@@ -151,7 +156,8 @@ struct obj {
 #define tc_c_file 17
 #define tc_subr_4 18
 #define tc_struct_instance 19
-#define tc_struct_def 20
+#define tc_struct_instance_with_rec 20
+#define tc_struct_def 21
 
 #define tc_user_1 50
 #define tc_user_2 51
@@ -435,13 +441,3 @@ LISP nreverse(LISP);
 LISP number2string(LISP, LISP);
 
 LISP string2number(LISP, LISP);
-
-long long get_timestamp_us(void);
-
-LISP print_timestamp_us(void);
-
-LISP mark_timestamp_start(void);
-
-LISP mark_timestamp_end(void);
-
-LISP print_runtime_us(void);

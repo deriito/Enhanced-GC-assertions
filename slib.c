@@ -97,9 +97,9 @@ char *siod_version(void) { return ("3.0 1-MAY-94"); }
 long nheaps = 2;
 LISP *heaps;
 LISP heap, heap_end, heap_org;
-long heap_size = 5000;
+long heap_size = 10000;
 long old_heap_used;
-long gc_status_flag = 1;
+long gc_status_flag = 0;
 char *init_file = (char *) NULL;
 char *tkbuffer = NULL;
 long gc_kind_copying = 0;
@@ -166,10 +166,15 @@ short recording_assign_site_on = 1;
 
 // 用于记录标记过的对象
 static LISP *gc_traced_objs = NULL;
+// 与gc_traced_objs的元素一一对应，用于记录具体是哪个field指向了下一个对象
+static long *gc_traced_obj_fields = NULL;
 
-// 用于计算运行时间的全局时间戳
-static long long start_timestamp = -1;
-static long long end_timestamp = -1;
+// 実行のかかるCPU時間の計算のため
+static clock_t clock_start = 0;
+static clock_t clock_end = 0;
+static double gc_clock_time_taken = 0.0;
+static clock_t gc_clock_start = 0;
+static clock_t gc_clock_end = 0;
 
 void process_cla(int argc, char **argv, int warnflag) {
     int k;
@@ -197,11 +202,8 @@ void process_cla(int argc, char **argv, int warnflag) {
                 break;
             case 'g':
                 gc_kind_copying = atol(&(argv[k][2]));
-
-
                 break;
             case 's':
-
                 stack_size = atol(&(argv[k][2]));
                 break;
             default:
@@ -1100,6 +1102,7 @@ void gc_for_newcell(void) {
 
 void gc_mark_and_sweep(void) {
     LISP stack_end;
+    mark_gc_clock_start();
     gc_ms_stats_start();
     setjmp(save_regs_gc_mark);
     mark_locations((LISP *) save_regs_gc_mark,
@@ -1113,6 +1116,7 @@ void gc_mark_and_sweep(void) {
 #endif
     gc_sweep();
     gc_ms_stats_end();
+    mark_gc_clock_end();
 }
 
 void gc_ms_stats_start(void) {
@@ -1131,7 +1135,7 @@ void gc_ms_stats_end(void) {
                gc_cells_collected);
 }
 
-void gc_mark(LISP ptr, long last_index_of_gc_traced_objs) {
+void gc_mark(LISP ptr, long last_index_of_gc_traced_objs, long previous_obj_selected_field) {
     struct user_type_hooks *p;
 
     gc_mark_loop:
@@ -1145,13 +1149,18 @@ void gc_mark(LISP ptr, long last_index_of_gc_traced_objs) {
 
     (*ptr).gc_mark = 1;
 
-    if (NULL == gc_traced_objs) {
+    if (NULL == gc_traced_objs || NULL == gc_traced_obj_fields) {
         gc_traced_objs = (LISP *) malloc(sizeof(LISP *) * heap_size);
+        gc_traced_obj_fields = (long *) malloc(sizeof(long) * heap_size);
     }
 
     if (!(tc_cons == ptr->type && !ptr->storage_as.cons.is_external_cons)) {
         ++last_index_of_gc_traced_objs;
         gc_traced_objs[last_index_of_gc_traced_objs] = ptr;
+        if (previous_obj_selected_field >= 0) {
+            long last_index_of_gc_traced_obj_fields = last_index_of_gc_traced_objs - 1L;
+            gc_traced_obj_fields[last_index_of_gc_traced_obj_fields] = previous_obj_selected_field;
+        }
     }
 
     // assert-dead check
@@ -1163,25 +1172,35 @@ void gc_mark(LISP ptr, long last_index_of_gc_traced_objs) {
         case tc_flonum:
             break;
         case tc_cons:
-            gc_mark(CAR(ptr), last_index_of_gc_traced_objs);
+            gc_mark(CAR(ptr), last_index_of_gc_traced_objs, CONS_CDR_TYPE_ID);
+            previous_obj_selected_field = CONS_CDR_TYPE_ID;
             ptr = CDR(ptr);
             goto gc_mark_loop;
         case tc_symbol:
             ptr = VCELL(ptr);
             goto gc_mark_loop;
         case tc_closure:
-            gc_mark((*ptr).storage_as.closure.code, last_index_of_gc_traced_objs);
+            gc_mark((*ptr).storage_as.closure.code, last_index_of_gc_traced_objs, CLOSURE_CODE_TYPE_ID);
+            previous_obj_selected_field = CLOSURE_ENV_TYPE_ID;
             ptr = (*ptr).storage_as.closure.env;
             goto gc_mark_loop;
         case tc_struct_instance:
             for (long i = 0; i < (*ptr).storage_as.struct_instance.struct_def_obj->storage_as.struct_def.dim; ++i) {
-                gc_mark((*ptr).storage_as.struct_instance.data[i], last_index_of_gc_traced_objs);
+                gc_mark((*ptr).storage_as.struct_instance.data[i], last_index_of_gc_traced_objs, i);
             }
+            previous_obj_selected_field = (*ptr).storage_as.struct_instance.struct_def_obj->storage_as.struct_def.dim + 1L;
+            break;
+        case tc_struct_instance_with_rec:
+            for (long i = 0; i < (*ptr).storage_as.struct_instance_with_rec.struct_def_obj->storage_as.struct_def.dim; ++i) {
+                gc_mark((*ptr).storage_as.struct_instance_with_rec.data[i], last_index_of_gc_traced_objs, i);
+            }
+            previous_obj_selected_field = (*ptr).storage_as.struct_instance_with_rec.struct_def_obj->storage_as.struct_def.dim + 1L;
             break;
         case tc_struct_def:
             for (long i = 0; i < (*ptr).storage_as.struct_def.dim; ++i) {
-                gc_mark((*ptr).storage_as.struct_def.field_name_strs[i], last_index_of_gc_traced_objs);
+                gc_mark((*ptr).storage_as.struct_def.field_name_strs[i], last_index_of_gc_traced_objs, i);
             }
+            previous_obj_selected_field = (*ptr).storage_as.struct_def.dim + 1L;
             break;
         case tc_subr_0:
         case tc_subr_1:
@@ -1207,7 +1226,7 @@ void mark_protected_registers(void) {
         location = (*reg).location;
         n = (*reg).length;
         for (j = 0; j < n; ++j) {
-            gc_mark(location[j], -1L);
+            gc_mark(location[j], -1L, -1);
         }
     }
 }
@@ -1245,7 +1264,7 @@ void mark_locations_array(LISP *x, long n) {
     for (j = 0; j < n; ++j) {
         p = x[j];
         if (looks_pointerp(p))
-            gc_mark(p, -1L);
+            gc_mark(p, -1L, -1);
     }
 }
 
@@ -2287,10 +2306,11 @@ void init_subrs_1(void) {
     init_subr_1("new-struct-instance", new_struct_instance);
     init_subr_4("set-field", set_field);
     init_subr_2("get-field", get_field);
-    init_subr_0("print-timestamp-us", print_timestamp_us);
-    init_subr_0("mark-timestamp-start", mark_timestamp_start);
-    init_subr_0("mark-timestamp-end", mark_timestamp_end);
-    init_subr_0("print-runtime-us", print_runtime_us);
+    init_subr_0("mark-clock-start", mark_clock_start);
+    init_subr_0("mark-clock-end", mark_clock_end);
+    init_subr_0("print-clock-time-cost", print_clock_time_cost);
+    init_subr_1("new-struct-instance-of-A", new_struct_instance_of_A);
+    init_subr_4("set-field-of-A", set_field_of_A);
 }
 
 /* err0,pr,prp are convenient to call from the C-language debugger */
@@ -2369,10 +2389,8 @@ LISP new_struct_instance(LISP struct_def) {
 
     instance->storage_as.struct_instance.struct_def_obj = struct_def;
     instance->storage_as.struct_instance.data = (LISP *) must_malloc(dim * sizeof(LISP));
-    instance->storage_as.struct_instance.assign_sites = (long *) must_malloc(dim * sizeof(long));
     for (long i = 0; i < dim; ++i) {
         instance->storage_as.struct_instance.data[i] = NIL;
-        instance->storage_as.struct_instance.assign_sites[i] = 0;
     }
 
     return (instance);
@@ -2407,13 +2425,6 @@ LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num) {
     }
 
     struct_instance->storage_as.struct_instance.data[field_index] = val;
-
-    if (recording_assign_site_on) {
-        long ln = (long) line_num->storage_as.flonum.data;
-        struct_instance->storage_as.struct_instance.assign_sites[field_index] = ln;
-        struct_instance->is_assign_info_recorded = 1;
-    }
-
     return (NIL);
 }
 
@@ -2423,11 +2434,17 @@ LISP get_field(LISP struct_instance, LISP field_name) {
         err("why struct_instance is null? (see get_field)", struct_instance);
     }
 
-    if (tc_struct_instance != struct_instance->type) {
+    if (tc_struct_instance != struct_instance->type && tc_struct_instance_with_rec != struct_instance->type) {
         err("wrong struct_instance obj! (see get_field)", struct_instance);
     }
 
-    LISP struct_def = struct_instance->storage_as.struct_instance.struct_def_obj;
+    LISP struct_def = NULL;
+    if (tc_struct_instance == struct_instance->type) {
+        struct_def = struct_instance->storage_as.struct_instance.struct_def_obj;
+    } else {
+        struct_def = struct_instance->storage_as.struct_instance_with_rec.struct_def_obj;
+    }
+
     if (NULL == struct_def) {
         err("why struct_def is null! (see get_field)", struct_def);
     }
@@ -2445,7 +2462,45 @@ LISP get_field(LISP struct_instance, LISP field_name) {
         err("wrong field name! (see get_field)", field_name);
     }
 
-    return (struct_instance->storage_as.struct_instance.data[field_index]);
+    LISP ret;
+    if (tc_struct_instance == struct_instance->type) {
+        ret = struct_instance->storage_as.struct_instance.data[field_index];
+    } else {
+        ret = struct_instance->storage_as.struct_instance_with_rec.data[field_index];
+    }
+
+    return (ret);
+}
+
+LISP mark_clock_start() {
+    clock_start = clock();
+    return (NIL);
+}
+
+LISP mark_clock_end() {
+    clock_end = clock();
+    return (NIL);
+}
+
+LISP print_clock_time_cost() {
+    double duration = (double) (clock_end - clock_start) / CLOCKS_PER_SEC;
+    printf("Runtime: %f sec(s) cpu time cost.\nGC: %f sec(s) cpu time cost.\n", duration - gc_clock_time_taken, gc_clock_time_taken);
+    clock_start = 0;
+    clock_end = 0;
+    gc_clock_time_taken = 0.0;
+    return (NIL);
+}
+
+void mark_gc_clock_start() {
+    gc_clock_start = clock();
+}
+
+void mark_gc_clock_end() {
+    gc_clock_end = clock();
+    double duration = (double) (gc_clock_end - gc_clock_start) / CLOCKS_PER_SEC;
+    gc_clock_time_taken = gc_clock_time_taken + duration;
+    gc_clock_start = 0;
+    gc_clock_end = 0;
 }
 
 void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs) {
@@ -2481,24 +2536,19 @@ void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs) {
                 LISP next_traced_obj = gc_traced_objs[i + 1];
                 char line_num_str[15] = "";
 
-                if (tc_struct_instance == current_traced_obj->type) {
-                    LISP struct_def_obj = current_traced_obj->storage_as.struct_instance.struct_def_obj;
-                    for (long j = 0; j < struct_def_obj->storage_as.struct_def.dim; ++j) {
-                        if (current_traced_obj->storage_as.struct_instance.data[j] == next_traced_obj) {
-                            translate_to_line_num_str(line_num_str,
-                                                      current_traced_obj->storage_as.struct_instance.assign_sites[j]);
-                            strcat(path_info, line_num_str);
-                        }
-                    }
+                if (tc_struct_instance_with_rec == current_traced_obj->type) {
+                    translate_to_line_num_str(line_num_str,
+                                              current_traced_obj->storage_as.struct_instance_with_rec.assign_site_of_field1);
+                    strcat(path_info, line_num_str);
                 }
             }
             strcat(path_info, "->\n");
         }
     }
 
-    printf("\033[31mWarning: an object that was asserted dead is reachable.\n"
-           "Type: %s;\nPath to object: %s\n\n\033[0m",
-           suspect_type_str, path_info);
+//    printf("\033[31mWarning: an object that was asserted dead is reachable.\n"
+//           "Type: %s;\nPath to object: %s\n\n\033[0m",
+//           suspect_type_str, path_info);
 }
 
 void translate_type_detail(char *res, LISP ptr) {
@@ -2532,6 +2582,7 @@ void translate_type_detail(char *res, LISP ptr) {
             strcat(res, ")");
             return;
         case tc_struct_instance:
+        case tc_struct_instance_with_rec:
             strcpy(res, ptr->storage_as.struct_instance.struct_def_obj->storage_as.struct_def.class_name_sym->storage_as.symbol.pname);
             return;
         default:
@@ -2549,28 +2600,64 @@ void translate_to_line_num_str(char* dst, long line_num) {
     sprintf(dst, "@ln%ld", line_num);
 }
 
-long long get_timestamp_us() {
-    struct timeval t;
-    gettimeofday(&t, 0);
-    return (long long) (t.tv_sec * 1000 * 1000 + t.tv_usec);
+// ハードコーディング for A
+LISP new_struct_instance_of_A(LISP struct_def) {
+    if (struct_def->type != tc_struct_def) {
+        err("wrong struct_def obj!(see new_struct_instance)", struct_def);
+    }
+
+    LISP instance = newcell(tc_struct_instance_with_rec);
+
+    long dim = struct_def->storage_as.struct_def.dim;
+
+    instance->storage_as.struct_instance_with_rec.struct_def_obj = struct_def;
+    instance->storage_as.struct_instance_with_rec.data = (LISP *) must_malloc(dim * sizeof(LISP));
+
+    for (long i = 0; i < dim; ++i) {
+        instance->storage_as.struct_instance_with_rec.data[i] = NIL;
+    }
+    instance->storage_as.struct_instance_with_rec.assign_site_of_field1 = 0;
+
+    return (instance);
 }
 
-LISP print_timestamp_us() {
-    printf("%lld\n", get_timestamp_us());
-    return (NIL);
-}
+// ハードコート
+LISP set_field_of_A(LISP struct_instance, LISP field_name, LISP val, LISP line_num) {
+    if (NULL == struct_instance) {
+        err("why struct_instance is null? (see set_field_of_A)", struct_instance);
+    }
 
-LISP mark_timestamp_start() {
-    start_timestamp = get_timestamp_us();
-    return (NIL);
-}
+    if (tc_struct_instance_with_rec != struct_instance->type) {
+        err("wrong struct_instance obj! (see set_field_of_A)", struct_instance);
+    }
 
-LISP mark_timestamp_end() {
-    end_timestamp = get_timestamp_us();
-    return (NIL);
-}
+    LISP struct_def = struct_instance->storage_as.struct_instance_with_rec.struct_def_obj;
+    if (NULL == struct_def) {
+        err("why struct_def is null! (see set_field_of_A)", struct_def);
+    }
 
-LISP print_runtime_us() {
-    printf("cost time: %lld us\n", end_timestamp - start_timestamp);
+    long field_index = -1L;
+    for (long i = 0; i < struct_def->storage_as.struct_def.dim; ++i) {
+        LISP tmp_str = struct_def->storage_as.struct_def.field_name_strs[i];
+        if (0 == strcmp(tmp_str->storage_as.string.data, field_name->storage_as.string.data)) {
+            field_index = i;
+            break;
+        }
+    }
+
+    if (field_index < 0) {
+        err("wrong field name! (see set_field_of_A)", field_name);
+    }
+
+    struct_instance->storage_as.struct_instance_with_rec.data[field_index] = val;
+
+    if (recording_assign_site_on) {
+        if (field_index == 0) {
+            long ln = (long) line_num->storage_as.flonum.data;
+            struct_instance->storage_as.struct_instance_with_rec.assign_site_of_field1 = ln;
+            struct_instance->is_assign_info_recorded = 1;
+        }
+    }
+
     return (NIL);
 }

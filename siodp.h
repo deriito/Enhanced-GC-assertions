@@ -127,7 +127,7 @@ void gc_ms_stats_start(void);
 
 void gc_ms_stats_end(void);
 
-void gc_mark(LISP ptr, long last_index_of_gc_traced_objs);
+void gc_mark(LISP ptr, long last_index_of_gc_traced_objs, long previous_obj_selected_field);
 
 void mark_protected_registers(void);
 
@@ -303,20 +303,37 @@ LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num);
 
 LISP get_field(LISP struct_instance, LISP field_name);
 
-void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs);
+LISP mark_clock_start(void);
+
+LISP mark_clock_end(void);
+
+LISP print_clock_time_cost(void);
+
+void mark_gc_clock_start(void);
+
+void mark_gc_clock_end(void);
 
 void translate_type_detail(char *res, LISP ptr);
 
 void translate_to_line_num_str(char* dst, long line_num);
 
-long long get_timestamp_us(void);
+void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs);
+
+LISP new_struct_instance_of_A(LISP struct_def);
+
+LISP set_field_of_A(LISP struct_instance, LISP field_name, LISP val, LISP line_num);
 
 /**
  * macros for gc assertion with new_struct_instance features
  */
 
+// stages of "assert-dead" assertion
+#define ASSERT_DEAD_STAGE_ROUGH 1
+#define ASSERT_DEAD_STAGE_DETAILED 2
+
 // assert-dead mark
 #define HAS_BEEN_ASSERTED 1
+#define HAD_BEEN_ASSERTED (-1)
 
 #define TYPE_STR_CONS "CONS"
 #define TYPE_STR_FLONUM "FLONUM"
@@ -325,3 +342,10 @@ long long get_timestamp_us(void);
 #define TYPE_STR_STRING "STRING"
 #define TYPE_STR_FILE "FILE"
 #define TYPE_STR_NO_SUCH_TYPE "NO SUCH TYPE: "
+
+// data structure field type ids
+#define CONS_CAR_TYPE_ID 0
+#define CONS_CDR_TYPE_ID 1
+#define SYMBOL_VCELL_TYPE_ID 0
+#define CLOSURE_CODE_TYPE_ID 0
+#define CLOSURE_ENV_TYPE_ID 1
