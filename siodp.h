@@ -297,7 +297,7 @@ LISP define_struct(LISP args, LISP env);
 
 LISP new_struct_instance(LISP struct_def);
 
-LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num);
+LISP set_field(LISP struct_instance, LISP field_name, LISP val);
 
 LISP get_field(LISP struct_instance, LISP field_name);
 

@@ -97,9 +97,9 @@ char *siod_version(void) { return ("3.0 1-MAY-94"); }
 long nheaps = 2;
 LISP *heaps;
 LISP heap, heap_end, heap_org;
-long heap_size = 5000;
+long heap_size = 10000;
 long old_heap_used;
-long gc_status_flag = 1;
+long gc_status_flag = 0;
 char *init_file = (char *) NULL;
 char *tkbuffer = NULL;
 long gc_kind_copying = 0;
@@ -2269,7 +2269,7 @@ void init_subrs_1(void) {
     init_subr_1("gc-info", gc_info);
     init_fsubr("define-struct", define_struct);
     init_subr_1("new-struct-instance", new_struct_instance);
-    init_subr_4("set-field", set_field);
+    init_subr_3("set-field", set_field);
     init_subr_2("get-field", get_field);
     init_subr_0("mark-clock-start", mark_clock_start);
     init_subr_0("mark-clock-end", mark_clock_end);
@@ -2346,8 +2346,8 @@ LISP new_struct_instance(LISP struct_def) {
     return (instance);
 }
 
-// (set-field struct-instance "field1" val1 line_num)
-LISP set_field(LISP struct_instance, LISP field_name, LISP val, LISP line_num) {
+// (set-field struct-instance "field1" val1)
+LISP set_field(LISP struct_instance, LISP field_name, LISP val) {
     if (NULL == struct_instance) {
         err("why struct_instance is null? (see set_field)", struct_instance);
     }
@@ -2422,7 +2422,7 @@ LISP mark_clock_end() {
 
 LISP print_clock_time_cost() {
     double duration = (double) (clock_end - clock_start) / CLOCKS_PER_SEC;
-    printf("%f sec(s) cpu time cost.\n", duration - gc_clock_time_taken);
+    printf("Runtime: %f sec(s) cpu time cost.\nGC: %f sec(s) cpu time cost.\n", duration - gc_clock_time_taken, gc_clock_time_taken);
     clock_start = 0;
     clock_end = 0;
     gc_clock_time_taken = 0.0;
