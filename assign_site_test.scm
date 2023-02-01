@@ -40,7 +40,7 @@
                     (k (new-struct-instance K)))
                 (begin
                   (if (not (null? tail))
-                      (set-field tail "field2" b)
+                      (set-field tail "field1" b)
                       (set-field a "field1" b))
                   (set-field b "field2" c)
                   (set-field c "field1" d)
