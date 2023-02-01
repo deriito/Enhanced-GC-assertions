@@ -2517,7 +2517,7 @@ void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs) {
     /**
     * e.g.
     * TYPE0; ->
-    * TYPE1; @ln10->
+    * TYPE1; @ln10 ->
     * ...
     */
     char path_info[(path_info_length + 1) * (40 + 10 + 10)];
@@ -2532,7 +2532,8 @@ void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs) {
         strcat(path_info, "; ");
 
         if (i != last_index_of_gc_traced_objs) {
-            if (recording_assign_site_on && current_traced_obj->is_assign_info_recorded) {
+            // 実験をするため，「i == 3 (1番目のAのインスタンス)」をハードコーディングする
+            if (recording_assign_site_on && i == 3 && current_traced_obj->is_assign_info_recorded) {
                 LISP next_traced_obj = gc_traced_objs[i + 1];
                 char line_num_str[15] = "";
 
