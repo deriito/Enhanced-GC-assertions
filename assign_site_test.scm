@@ -55,7 +55,9 @@
         (assert-dead tail)))))
 
 (mark-clock-start)
-(func)
-(gc)
+(loop 1000
+  (lambda ()
+    (begin
+     (func))))
 (mark-clock-end)
 (print-clock-time-cost)
