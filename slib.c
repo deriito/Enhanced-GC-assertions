@@ -97,9 +97,9 @@ char *siod_version(void) { return ("3.0 1-MAY-94"); }
 long nheaps = 2;
 LISP *heaps;
 LISP heap, heap_end, heap_org;
-long heap_size = 5000;
+long heap_size = 10000;
 long old_heap_used;
-long gc_status_flag = 1;
+long gc_status_flag = 0;
 char *init_file = (char *) NULL;
 char *tkbuffer = NULL;
 long gc_kind_copying = 0;
@@ -2464,7 +2464,7 @@ LISP mark_clock_end() {
 
 LISP print_clock_time_cost() {
     double duration = (double) (clock_end - clock_start) / CLOCKS_PER_SEC;
-    printf("%f sec(s) cpu time cost.\n", duration - gc_clock_time_taken);
+    printf("Runtime: %f sec(s) cpu time cost.\nGC: %f sec(s) cpu time cost.\n", duration - gc_clock_time_taken, gc_clock_time_taken);
     clock_start = 0;
     clock_end = 0;
     gc_clock_time_taken = 0.0;
@@ -2531,9 +2531,9 @@ void process_assert_dead_obj(LISP ptr, long last_index_of_gc_traced_objs) {
         }
     }
 
-    printf("\033[31mWarning: an object that was asserted dead is reachable.\n"
-           "Type: %s;\nPath to object: %s\n\n\033[0m",
-           suspect_type_str, path_info);
+//    printf("\033[31mWarning: an object that was asserted dead is reachable.\n"
+//           "Type: %s;\nPath to object: %s\n\n\033[0m",
+//           suspect_type_str, path_info);
 }
 
 void translate_type_detail(char *res, LISP ptr) {
