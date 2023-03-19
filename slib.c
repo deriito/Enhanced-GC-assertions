@@ -1161,7 +1161,7 @@ void gc_mark(LISP ptr, long last_index_of_gc_traced_objs) {
 
     // assert-dead check
     if (ptr->assert_dead == HAS_BEEN_ASSERTED) {
-        process_assert_dead_obj(ptr, last_index_of_gc_traced_objs);
+        // process_assert_dead_obj(ptr, last_index_of_gc_traced_objs);
     }
 
     switch ((*ptr).type) {

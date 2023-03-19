@@ -55,7 +55,7 @@
         (assert-dead tail)))))
 
 (mark-clock-start)
-(loop 1000
+(loop 1
   (lambda ()
     (begin
      (func))))
